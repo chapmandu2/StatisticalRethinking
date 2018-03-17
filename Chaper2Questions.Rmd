@@ -1,0 +1,186 @@
+
+```{r}
+library(ggplot2)
+```
+
+## Easy Questions
+
+### Q.2E1
+_the probability of rain on Monday_ corresponds to Pr(rain|Monday) - ie the probability of rain given that it is a monday
+
+### Q.2E2
+Pr(Monday|rain) corresponds to the probability that it is a Monday given that it is raining.
+
+### Q.2E3
+_the probability that it is Monday, given that it is raining_ corresponds to:
+Pr(Monday|rain)
+Pr(rain|Monday) Pr(Monday)/ Pr(rain)
+
+### Q.2E4
+_that probability of water_ is the probability that what the ball is thrown and caught, that the index finger of the catcher lies on water.  This is equivalent to the proportion of water on the globe.
+
+## Medium Quesions
+
+### Q.2M1
+Compute and plot the grid approximate posterior distribution for each of the following sets of observations. In each case, assume a uniform prior for p. WWW, WWWL, LWWLWWW
+
+```{r}
+#define grid
+p_grid <- seq(from=0, to=1, length.out=1000)
+
+#define prior
+prior <- rep(1,1000)
+
+#compute posterior for WWW
+lik1 <- dbinom(3, size=3, prob=p_grid) #compute likelihood at each point in grid - ie 3/3 water
+posterior_unstd1 <- lik1 * prior #compute product of likelihood and prior
+posterior1 <- posterior_unstd1/sum(posterior_unstd1)  #standardise the posterior so it sums to 1
+qplot(p_grid, posterior1) + geom_point() + ggtitle('WWW') + theme_bw()
+
+#compute posterior for WWWL
+lik2 <- dbinom(3, size=4, prob=p_grid) #compute likelihood at each point in grid - ie 3/4 water
+posterior_unstd2 <- lik2 * prior #compute product of likelihood and prior
+posterior2 <- posterior_unstd2/sum(posterior_unstd2)  #standardise the posterior so it sums to 1
+qplot(p_grid, posterior2) + geom_point() + ggtitle('WWWL') + theme_bw()
+
+#compute posterior for LWWLWWW
+lik3 <- dbinom(5, size=7, prob=p_grid) #compute likelihood at each point in grid - ie 5/7 water
+posterior_unstd3 <- lik3 * prior #compute product of likelihood and prior
+posterior3 <- posterior_unstd3/sum(posterior_unstd3)  #standardise the posterior so it sums to 1
+qplot(p_grid, posterior3) + geom_point() + ggtitle('LWWLWWW') + theme_bw()
+
+```
+
+### Q.2M2
+Compute and plot the grid approximate posterior distributions for the above when the prior is zero when p<0.5 and constant when p>0.5
+
+```{r}
+#define grid
+p_grid <- seq(from=0, to=1, length.out=1000)
+
+#define prior
+prior <- as.numeric(p_grid > 0.5)
+
+#compute posterior for WWW
+lik1 <- dbinom(3, size=3, prob=p_grid) #compute likelihood at each point in grid - ie 3/3 water
+posterior_unstd1 <- lik1 * prior #compute product of likelihood and prior
+posterior1 <- posterior_unstd1/sum(posterior_unstd1)  #standardise the posterior so it sums to 1
+qplot(p_grid, posterior1, geom = 'line') + ggtitle('WWW') + theme_bw()
+
+#compute posterior for WWWL
+lik2 <- dbinom(3, size=4, prob=p_grid) #compute likelihood at each point in grid - ie 3/4 water
+posterior_unstd2 <- lik2 * prior #compute product of likelihood and prior
+posterior2 <- posterior_unstd2/sum(posterior_unstd2)  #standardise the posterior so it sums to 1
+qplot(p_grid, posterior2, geom = 'line') + ggtitle('WWWL') + theme_bw()
+
+#compute posterior for LWWLWWW
+lik3 <- dbinom(5, size=7, prob=p_grid) #compute likelihood at each point in grid - ie 5/7 water
+posterior_unstd3 <- lik3 * prior #compute product of likelihood and prior
+posterior3 <- posterior_unstd3/sum(posterior_unstd3)  #standardise the posterior so it sums to 1
+qplot(p_grid, posterior3, geom = 'line') + ggtitle('LWWLWWW') + theme_bw()
+
+
+```
+
+### Q.2M3
+Suppose there are two globes, one for Earth and one for Mars. The Earth globe is 70% covered in water. The Mars globe is 100% land. Further suppose that one of these globes—you don't know which—was tossed in the air and produced a “land” observation. Assume that each globe was equally likely to be tossed. Show that the posterior probability that the globe was the Earth, conditional on seeing “land” (Pr(Earth|land)), is 0.23.
+
+Pr(Earth|land) = Pr(land|Earth)*Pr(Earth)/Pr(land)
+
+Pr(land|Earth) = 0.3
+Pr(land|Mars) = 1
+So Pr(land) = 0.3 + 1 / 2 = 0.65
+Pr(Earth) = 0.5
+
+Thus Pr(Earth|land): 
+```{r}
+0.3*0.5/0.65
+```
+
+### Q.2M4
+Three cards B/B, B/W, W/W.  Put in bag and shuffled.  Card pulled and B up but unknown down - probability of other side being black is 2/3.  Show.
+
+How many ways could each card produce the data?
+B/B - 2 ways
+B/W - 1 way
+W/W - 0 ways
+
+'Other side being black' is equivalent to card being B/B, so probability is 2/3.
+
+### Q.2M5
+Now there are 4 cards: B/B, B/W, W/W, B/B
+B/B-1 - 2 ways
+B/B-2 - 2 ways
+B/W - 1 way
+W/W - 0 ways
+
+Probability now 4/5
+
+### Q 2.M6
+Now for every way to pull the B/B card from the bag, there are 2 ways to pull the B/W card and 3 ways to pull the W/W card.  Show prob now 0.5.
+
+B/B - 2 ways * 1 skew factor = 2
+B/W - 1 way * 2 skew factor = 2
+W/W - 0 ways * 3 skew factor = 0
+
+Probability now 2/2 = 0.5
+
+### Q 2.M7
+Now draw 2 cards.  Second card is white face up.  Prob that first card is B/B now 0.75
+
+B/B then B/W - 2 ways
+B/B then W/W - 4 ways
+B/W then B/B - 0 ways
+B/W then W/W - 2 ways
+W/W then B/B - 0 ways
+W/W then B/W - 0 ways
+
+Now there are 6/8 ways that first card is B/B so prob 0.75.
+
+### Q 2.H1
+Pr(twins|A) = 0.1
+Pr(twins|B) = 0.2
+Pr(A) = 0.5
+Pr(B) = 0.5
+
+
+Panda given birth to twins, prob next birth twins.  
+With no prior knowledge our estimate (Pr(twins)) would be 0.15 since A/B equally likely, or more formally it's 0.1x0.5 + 0.2x0.5
+But panda more likely to be species B, so probability Pr(twins) should be between 0.15 and 0.2.
+
+First work out Pr(A|twins) and Pr(B|twins)
+Pr(A|twins) = Pr(twins|A)*Pr(A)/Pr(twins):
+```{r}
+P_A_given_twins <- 0.1 * 0.5 / 0.15
+P_A_given_twins
+P_B_given_twins <- 1-P_A_given_twins
+P_B_given_twins
+```
+We can now use these updated priors to work out a new value for Pr(twins):
+Pr(twins) = Pr(twins|A) x Pr(updated A) + Pr(twins|B) x Pr(updated B)
+
+```{r}
+0.1 * P_A_given_twins + 0.2 * P_B_given_twins
+```
+
+### Q 2.H2
+From 2H1 Pr(A|twins) is 0.333
+
+### Q 2.H3
+Now panda has a second birth and it is not twins.  Compute posterior probability that panda is species A
+
+Use Bayes rule again ie:
+Pr(twins|A) = 0.1
+Pr(twins|B) = 0.2
+Pr(A) = 0.333 (updated previously)
+Pr(B) = 0.666
+
+Pr(A|not twins) = Pr(not twins|A)*Pr(A)/Pr(not twins)
+```{r}
+(1-0.1) * P_A_given_twins / (1-0.1666667)
+```
+
+
+
+
+

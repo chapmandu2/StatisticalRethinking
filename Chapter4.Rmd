@@ -1,0 +1,199 @@
+---
+title: "Stat Rethinking Chapter 4"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Set up
+
+Load required libraries
+
+```{r warning=FALSE, message=FALSE}
+library(rethinking, quietly = TRUE)
+library(tidyverse, quietly = TRUE)
+library(DT, quietly = TRUE)
+```
+
+# Chapter 4
+
+## Q4H1
+
+The weights below were recorded from the !Kung census but heights were not recorded for these individuals.  Provide predicted heights and 89% intervals (either HPDI or PI) for each of these individuals.  That is, fill the table using model based predictions.
+
+```{r}
+kung_extra <- data.frame(i=1:5, 
+                         weight=c(46.95, 43.72, 64.78, 32.59, 54.63),
+                         height=rep(NA,5),
+                         pi_89_lower=rep(NA,5),
+                         pi_89_upper=rep(NA,5))
+DT::datatable(kung_extra)                         
+```
+
+Make a model using adults:
+
+```{r}
+data(Howell1)
+d_adults <- Howell1[Howell1$age >= 18,]
+
+m4h0_flist <- alist(
+        height ~ dnorm( mu , sigma ) ,
+        mu <- a + b*weight ,
+        a ~ dnorm( 178 , 30 ) ,
+        b ~ dnorm( 0 , 10 ) ,
+        sigma ~ dunif( 0 , 50 )
+)
+
+m4h0 <- rethinking::map( m4h0_flist , data=d_adults )
+
+```
+
+Now do the predictions:
+
+```{r}
+m4h0.mu <- link( m4h0 , data=list(weight=kung_extra$weight ))
+m4h0.mu.mean <- apply( m4h0.mu , 2 , mean )
+m4h0.mu.HPDI <- apply( m4h0.mu , 2 , HPDI , prob=0.89 )
+
+```
+ Put the predictions in the data frame:
+ 
+```{r}
+kung_extra$height <- round(m4h0.mu.mean,1)
+kung_extra$pi_89_lower <- round(m4h0.mu.HPDI[1,],1)
+kung_extra$pi_89_upper <- round(m4h0.mu.HPDI[2,],1)
+DT::datatable(kung_extra)
+ 
+```
+
+## Q4H2
+
+Select rows in Howell dataset below 18 years of age - should get 192 rows
+
+```{r}
+data("Howell1") 
+d_u18 <- Howell1[Howell1$age< 18,]
+nrow(d_u18)
+```
+
+###Q4H2a
+
+Fit a linear regression using map, and using the approximate mean for the mean of the intercept prior.
+
+```{r}
+m4h1_flist <- alist(
+        height ~ dnorm( mu , sigma ) ,
+        mu <- a + b*weight ,
+        a ~ dnorm( 100 , 30 ) ,
+        b ~ dnorm( 0 , 10 ) ,
+        sigma ~ dunif( 0 , 50 )
+)
+
+m4h1 <- rethinking::map( m4h1_flist , data=d_u18 )
+```
+
+View the coefficients:
+```{r}
+precis( m4h1 )
+```
+
+So for every 10 units increase in weight, the child gets 27.2 units taller.
+
+###Q42Hb
+Plot the raw data plus the MAP regression line and 89% HPDI for the mean.  Also superimpose the 89% HPDI for the predicted heights.
+```{r}
+#use link to generate MAP line and its HPDI
+m4h1.weight.seq <- seq( from=2, to=50 , length.out=49 )
+m4h1.mu <- link( m4h1 , data=list(weight=m4h1.weight.seq ))
+m4h1.mu.mean <- apply( m4h1.mu , 2 , mean )
+m4h1.mu.HPDI <- apply( m4h1.mu , 2 , HPDI , prob=0.89 )
+
+#use sim to generate HPDI for predicted heights
+m4h1.sim.height <- sim( m4h1 , data=list(weight=m4h1.weight.seq ) )
+m4h1.height.HPDI <- apply( m4h1.sim.height , 2 , HPDI , prob=0.89 )
+
+#make a data frame of model predictions for plotting
+m4h1_model_plot_dat <- data.frame(weight=m4h1.weight.seq, 
+                             height=m4h1.mu.mean, 
+                             mu_pi_lower=m4h1.mu.HPDI[1,],
+                             mu_pi_upper=m4h1.mu.HPDI[2,],
+                             height_pi_lower=m4h1.height.HPDI[1,],
+                             height_pi_upper=m4h1.height.HPDI[2,])
+
+#do plot with ggplot2
+library(ggplot2)
+ggplot(d_u18, aes(weight, height)) + 
+    geom_point() +
+    geom_line(data=m4h1_model_plot_dat) +
+    geom_ribbon(data=m4h1_model_plot_dat, aes(x=weight, ymin=mu_pi_lower, ymax=mu_pi_upper), 
+                alpha=0.4) +
+    geom_ribbon(data=m4h1_model_plot_dat, aes(x=weight, ymin=height_pi_lower, ymax=height_pi_upper), 
+                alpha=0.2) +
+    theme_bw()
+```
+
+### Q42Hc
+Model gives straight line but relationship doesn't seem to be entirely linear - ie the predictoins are too high when weight is low and too low when weight is high.  A model including a quadratic term may be better.
+
+## Q4H3
+
+Fit a model including the log term:
+
+```{r}
+m4h3_flist <- alist(
+        height ~ dnorm( mu , sigma ) ,
+        mu <- a + b*log(weight) ,
+        a ~ dnorm( 178 , 100 ) ,
+        b ~ dnorm( 0 , 100 ) ,
+        sigma ~ dunif( 0 , 50 )
+)
+
+m4h3 <- rethinking::map( m4h3_flist , data=Howell1 )
+```
+
+Look at coefficients:
+
+```{r}
+precis(m4h3)
+```
+For every log unit of weight, height increases by 47 units.
+
+### Q4H3b
+
+```{r}
+#use link to generate MAP line and its HPDI
+m4h3.weight.seq <- seq( from=2, to=65 , length.out=64 )
+m4h3.mu <- link( m4h3 , data=list(weight=m4h3.weight.seq ))
+m4h3.mu.mean <- apply( m4h3.mu , 2 , mean )
+m4h3.mu.HPDI <- apply( m4h3.mu , 2 , HPDI , prob=0.97 )
+
+#use sim to generate HPDI for predicted heights
+m4h3.sim.height <- sim( m4h3 , data=list(weight=m4h3.weight.seq ) )
+m4h3.height.HPDI <- apply( m4h3.sim.height , 2 , HPDI , prob=0.97 )
+
+#make a data frame of model predictions for plotting
+m4h3_model_plot_dat <- data.frame(weight=m4h3.weight.seq, 
+                             height=m4h3.mu.mean, 
+                             mu_pi_lower=m4h3.mu.HPDI[1,],
+                             mu_pi_upper=m4h3.mu.HPDI[2,],
+                             height_pi_lower=m4h3.height.HPDI[1,],
+                             height_pi_upper=m4h3.height.HPDI[2,])
+
+#do plot with ggplot2
+library(ggplot2)
+ggplot(Howell1, aes(weight, height)) + 
+    geom_point() +
+    geom_line(data=m4h3_model_plot_dat) +
+    geom_ribbon(data=m4h3_model_plot_dat, aes(x=weight, ymin=mu_pi_lower, ymax=mu_pi_upper), 
+                alpha=0.4) +
+    geom_ribbon(data=m4h3_model_plot_dat, aes(x=weight, ymin=height_pi_lower, ymax=height_pi_upper), 
+                alpha=0.2) +
+    theme_bw()
+
+```
+
+
+
+
