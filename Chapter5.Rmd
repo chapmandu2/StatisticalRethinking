@@ -1,0 +1,225 @@
+---
+title: "Stat Rethinking Chapter 5"
+output: html_document
+---
+    
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Set up
+
+Load required libraries
+
+```{r warning=FALSE, message=FALSE}
+library(rethinking, quietly = TRUE)
+library(tidyverse, quietly = TRUE)
+library(DT, quietly = TRUE)
+```
+
+# Chapter 5
+
+## Q5H1
+
+Load the foxes data and view:
+
+```{r}
+data(foxes)
+knitr::kable(foxes[1:10,])
+```
+
+### Weight vs Area
+Fit a bivariate Gaussian regression for body weight as a linear function of territory size:
+
+```{r}
+m5h1_flist <- alist(
+        weight ~ dnorm( mu , sigma ) ,
+        mu <- a + b*area ,
+        a ~ dnorm( 4.5 , 10 ) ,
+        b ~ dnorm( 0 , 100 ) ,
+        sigma ~ dunif( 0 , 50 )
+)
+
+m5h1 <- rethinking::map( m5h1_flist , data=foxes )
+```
+
+Quickly look at the parameter estimates:
+
+```{r}
+precis(m5h1)
+plot(precis(m5h1))
+```
+
+Now look at MAP regression line and 95% interval of the mean
+
+```{r}
+#use link to generate MAP line and its HPDI
+m5h1.area.seq <- seq( from=0.5, to=7 , by = 0.1 )
+m5h1.mu <- link( m5h1 , data=list(area=m5h1.area.seq ))
+m5h1.mu.mean <- apply( m5h1.mu , 2 , mean )
+m5h1.mu.HPDI <- apply( m5h1.mu , 2 , HPDI , prob=0.97 )
+
+#make a data frame of model predictions for plotting
+m5h1_model_plot_dat <- data.frame(area=m5h1.area.seq, 
+                             weight=m5h1.mu.mean, 
+                             mu_pi_lower=m5h1.mu.HPDI[1,],
+                             mu_pi_upper=m5h1.mu.HPDI[2,])
+
+#do plot with ggplot2
+library(ggplot2)
+ggplot(foxes, aes(area, weight)) + 
+    geom_point() +
+    geom_line(data=m5h1_model_plot_dat) +
+    geom_ribbon(data=m5h1_model_plot_dat, aes(x=area, ymin=mu_pi_lower, ymax=mu_pi_upper), 
+                alpha=0.4)  +
+    theme_bw()
+
+```
+
+### Weight vs Area
+Fit a bivariate Gaussian regression for body weight as a linear function of group size:
+
+```{r}
+m5h1b_flist <- alist(
+        weight ~ dnorm( mu , sigma ) ,
+        mu <- a + b*groupsize ,
+        a ~ dnorm( 4.5 , 10 ) ,
+        b ~ dnorm( 0 , 100 ) ,
+        sigma ~ dunif( 0 , 50 )
+)
+
+m5h1b <- rethinking::map( m5h1b_flist , data=foxes )
+```
+
+Quickly look at the parameter estimates:
+
+```{r}
+precis(m5h1b)
+plot(precis(m5h1b))
+```
+
+Now look at MAP regression line and 95% interval of the mean
+
+```{r}
+#use link to generate MAP line and its HPDI
+m5h1b.groupsize.seq <- seq( from=1, to=9 , by = 0.2 )
+m5h1b.mu <- link( m5h1b , data=list(groupsize=m5h1b.groupsize.seq ))
+m5h1b.mu.mean <- apply( m5h1b.mu , 2 , mean )
+m5h1b.mu.HPDI <- apply( m5h1b.mu , 2 , HPDI , prob=0.97 )
+
+#make a data frame of model predictions for plotting
+m5h1b_model_plot_dat <- data.frame(groupsize=m5h1b.groupsize.seq, 
+                             weight=m5h1b.mu.mean, 
+                             mu_pi_lower=m5h1b.mu.HPDI[1,],
+                             mu_pi_upper=m5h1b.mu.HPDI[2,])
+
+#do plot with ggplot2
+library(ggplot2)
+ggplot(foxes, aes(groupsize, weight)) + 
+    geom_point() +
+    geom_line(data=m5h1b_model_plot_dat) +
+    geom_ribbon(data=m5h1b_model_plot_dat, aes(x=groupsize, ymin=mu_pi_lower, ymax=mu_pi_upper), 
+                alpha=0.4)  +
+    theme_bw()
+
+```
+
+### Conclusion
+
+Neither group size nor area appears to be important for predicting fox body weight based on the bivariate regressions.
+
+## Q5H2
+
+In this question we want to see the effect of including both groupsize AND area in the regression.
+
+### Fit a multiple linear regression
+
+```{r}
+m5h2_flist <- alist(
+        weight ~ dnorm( mu , sigma ) ,
+        mu <- a + bG*groupsize + bA*area ,
+        a ~ dnorm( 4.5 , 10 ) ,
+        bG ~ dnorm( 0 , 100 ) ,
+        bA ~ dnorm( 0 , 100 ) ,
+        sigma ~ dunif( 0 , 50 )
+)
+
+m5h2 <- rethinking::map( m5h2_flist , data=foxes )
+```
+
+Quickly look at the parameter estimates:
+
+```{r}
+precis(m5h2)
+plot(precis(m5h2))
+```
+
+Now the variables do look more important since - larger group size seems to negatively impact weight whereas larger area size positively impacts weight.
+
+### Counterfactual plots
+
+First explore groupsize:
+
+```{r}
+#set up prediction data
+pred_data_m5h2a <- data.frame(area=mean(foxes$area),
+                        groupsize=seq( from=1, to=9 , by = 0.2 ))
+
+#predict mu from model
+mu_m5h2a <- link(m5h2, data=pred_data_m5h2a, n=1e4)
+mu_mean_m5h2a <- apply(mu_m5h2a, 2, mean)
+mu_PI_m5h2a <- apply(mu_m5h2a, 2, PI, prob=0.975 )
+
+#make a data frame of model predictions for plotting
+m5h2a_model_plot_dat <- data.frame(area = pred_data_m5h2a$area,
+                             groupsize=pred_data_m5h2a$groupsize, 
+                             weight=mu_mean_m5h2a, 
+                             mu_pi_lower=mu_PI_m5h2a[1,],
+                             mu_pi_upper=mu_PI_m5h2a[2,])
+
+#do plot with ggplot2
+ggplot(m5h2a_model_plot_dat, aes(groupsize, weight)) + 
+    geom_line(data=m5h2a_model_plot_dat) +
+    geom_ribbon(data=m5h2a_model_plot_dat, aes(x=groupsize, ymin=mu_pi_lower, ymax=mu_pi_upper), 
+                alpha=0.4)  +
+    theme_bw()
+
+
+```
+
+Now area:
+
+First explore groupsize:
+
+```{r}
+#set up prediction data
+pred_data_m5h2b <- data.frame(area=seq( from=0.5, to=7 , by = 0.1 ),
+                        groupsize=mean(foxes$groupsize))
+
+#predict mu from model
+mu_m5h2b <- link(m5h2, data=pred_data_m5h2b, n=1e4)
+mu_mean_m5h2b <- apply(mu_m5h2b, 2, mean)
+mu_PI_m5h2b <- apply(mu_m5h2b, 2, PI, prob=0.975 )
+
+#make a data frame of model predictions for plotting
+m5h2b_model_plot_dat <- data.frame(area = pred_data_m5h2b$area,
+                             area=pred_data_m5h2b$groupsize, 
+                             weight=mu_mean_m5h2b, 
+                             mu_pi_lower=mu_PI_m5h2b[1,],
+                             mu_pi_upper=mu_PI_m5h2b[2,])
+
+#do plot with ggplot2
+ggplot(m5h2b_model_plot_dat, aes(area, weight)) + 
+    geom_line(data=m5h2b_model_plot_dat) +
+    geom_ribbon(data=m5h2b_model_plot_dat, aes(x=area, ymin=mu_pi_lower, ymax=mu_pi_upper), 
+                alpha=0.4)  +
+    theme_bw()
+
+
+```
+
+### Conclusion
+
+Including both variables in the model shows that area has a positive impact on weight whilst groupsize has a negative impact on weight.  THe size of the effects is bigger than when the variables were examined in seperate models.  This is due to the masking effect where two variables with effects in opposite directions can mask eachother out unless considered together. 
+
+
