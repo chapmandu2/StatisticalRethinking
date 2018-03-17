@@ -158,6 +158,8 @@ Now the variables do look more important since - larger group size seems to nega
 
 ### Counterfactual plots
 
+#### Group Size Counterfactual
+
 First explore groupsize:
 
 ```{r}
@@ -187,9 +189,10 @@ ggplot(m5h2a_model_plot_dat, aes(groupsize, weight)) +
 
 ```
 
+#### Area Counterfactual
+
 Now area:
 
-First explore groupsize:
 
 ```{r}
 #set up prediction data
@@ -222,4 +225,79 @@ ggplot(m5h2b_model_plot_dat, aes(area, weight)) +
 
 Including both variables in the model shows that area has a positive impact on weight whilst groupsize has a negative impact on weight.  THe size of the effects is bigger than when the variables were examined in seperate models.  This is due to the masking effect where two variables with effects in opposite directions can mask eachother out unless considered together. 
 
+## Q5C
 
+### Model with avgfood and groupsize
+
+Fit multiple linear regression with avgfood and groupsize:
+
+```{r}
+m5h3a_flist <- alist(
+        weight ~ dnorm( mu , sigma ) ,
+        mu <- a + bG*groupsize + bF*avgfood ,
+        a ~ dnorm( 4.5 , 10 ) ,
+        bG ~ dnorm( 0 , 100 ) ,
+        bF ~ dnorm( 0 , 100 ) ,
+        sigma ~ dunif( 0 , 50 )
+)
+
+m5h3a <- rethinking::map( m5h3a_flist , data=foxes )
+```
+
+Quickly look at the parameter estimates:
+
+```{r}
+precis(m5h3a)
+precis(m5h3a)@output %>%
+    tibble::rownames_to_column('par') %>%
+    ggplot(aes(x=par, y=Mean)) + 
+    geom_linerange(aes(ymin=Mean-StdDev, ymax=Mean+StdDev)) + 
+    geom_point(size=4, shape=1) +
+    theme_bw() + coord_flip() + geom_hline(yintercept = 0)
+```
+
+### Model with avgfood, groupsize and area
+
+Now fit model including avgfood, groupsize and area:
+
+
+```{r}
+m5h3b_flist <- alist(
+        weight ~ dnorm( mu , sigma ) ,
+        mu <- a + bG*groupsize + bF*avgfood + bA*area,
+        a ~ dnorm( 4.5 , 10 ) ,
+        bG ~ dnorm( 0 , 100 ) ,
+        bF ~ dnorm( 0 , 100 ) ,
+        bA ~ dnorm( 0 , 100 ) ,
+        sigma ~ dunif( 0 , 50 )
+)
+
+m5h3b <- rethinking::map( m5h3b_flist , data=foxes )
+```
+
+Quickly look at the parameter estimates:
+
+```{r}
+precis(m5h3b)
+precis(m5h3b)@output %>%
+    tibble::rownames_to_column('par') %>%
+    ggplot(aes(x=par, y=Mean)) + 
+    geom_linerange(aes(ymin=Mean-StdDev, ymax=Mean+StdDev)) + 
+    geom_point(size=4, shape=1) +
+    theme_bw() + coord_flip() + geom_hline(yintercept = 0)
+```
+
+### Conclusion
+
+In the second model the coefficient for avgfood is 2.51 vs 3.83 in the first model, and the standard deviation has gone up from 1.21 to 1.45.  The coefficient for groupsize has remained much as the same as in the previous model.  This suggests that food may be correlated with area.  We can explore this below:
+
+```{r}
+precis(m5h3b, corr = TRUE)
+```
+Indeed average food and groupsize are correlated, as are average food and area.  This is can also be seen in a pairs plot.  
+
+```{r}
+pairs(foxes)
+```
+
+Since average food is likely a function of both the size of the group, and the size of the group's territory from which food can be derived, average food should be excluded from the model.
