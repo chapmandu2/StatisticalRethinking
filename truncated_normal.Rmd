@@ -1,0 +1,279 @@
+---
+title: "Truncated Normal Distributions"
+author: Phil Chapman
+date: 2018-06-21
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries
+
+```{r}
+library(rjags, quietly = TRUE)
+library(ggplot2, quietly = TRUE)
+library(dplyr, quietly = TRUE)
+library(tidybayes, quietly = TRUE)
+```
+
+## Simulate truncated data
+
+First simulate 1000 data points from a normal distribution 
+```{r}
+data <- rnorm(1000, 500, 80)
+mean(data)
+sd(data)
+hist(data, breaks=30)
+```
+
+Now truncate the data and plot
+
+```{r}
+trunc_data <- data [data<600]
+hist(trunc_data, breaks=30)
+
+```
+
+Note that this isn't quite the same as the actual data, where values over 600 are given a value of 600.
+
+```{r}
+trunc_data2 <- data
+trunc_data2[trunc_data2 >= 600] <- 600
+hist(trunc_data2, breaks=30)
+```
+
+## Bayesian estimation of means - normal
+
+First define a data list:
+
+```{r}
+dlist <- list(d=data, dt=trunc_data, dt2=trunc_data2, n=length(data), nt=length(trunc_data))
+str(dlist)
+```
+
+
+Define a model in JAGS (Just Another Gibbs Sampler) to calculate the mean
+```{r}
+
+#now try in JAGs
+m1_jags_txt <- 'model {
+for (i in 1:n) {
+  d[i] ~ dnorm(mu, tau)
+}
+mu ~ dunif(100,700)
+tau <- pow(sigma, -2)
+sigma ~ dunif(0, 150)
+}'
+```
+
+Run the model
+```{r}
+m1_jags <- jags.model(textConnection(m1_jags_txt),
+                      data = dlist,
+                      n.chains = 4,
+                      n.adapt = 1000)
+
+update(m1_jags, 5000)
+```
+
+Get samples:
+```{r}
+samples_m1 <- coda.samples(m1_jags,
+             c('mu', 'sigma'),
+             1000)
+```
+
+Check out the samples - check for decent mixing
+```{r}
+plot(samples_m1)
+```
+
+Slightly better plot:
+```{r}
+samples_m1 %>%
+  as.mcmc.list() %>%
+  spread_samples(mu, sigma) %>%
+  ggplot(aes(x=.chain, y=mu)) + geom_eye() + coord_flip() + ylim(480, 520)
+
+```
+
+Compare bayesian mean to original simulated data:
+
+```{r}
+mean(data)
+sd(data)
+samples_m1 %>%
+  as.mcmc.list() %>%
+  spread_samples(mu, sigma) %>%
+  tidybayes::mean_qi()
+
+```
+
+## Use bayesian mean approach on truncated data
+
+What is mean and sd of truncated data?
+
+```{r}
+mean(data)
+mean(trunc_data)
+mean(trunc_data2)
+sd(data)
+sd(trunc_data)
+sd(trunc_data2)
+
+```
+
+What happens when we apply the same approach as above?
+
+First using truncated data where points over 600 are removed completely:
+```{r}
+m1b_jags <- jags.model(textConnection(m1_jags_txt),
+                      data = list(d=dlist$dt, n=dlist$nt),
+                      n.chains = 4,
+                      n.adapt = 1000)
+
+update(m1b_jags, 5000)
+```
+
+Get samples for model 1b:
+```{r}
+samples_m1b <- coda.samples(m1b_jags,
+             c('mu', 'sigma'),
+             1000)
+```
+
+Now where points are set to 600
+```{r}
+m1c_jags <- jags.model(textConnection(m1_jags_txt),
+                      data = list(d=dlist$dt2, n=dlist$n),
+                      n.chains = 4,
+                      n.adapt = 1000)
+
+update(m1c_jags, 5000)
+```
+
+Get samples for model 1b:
+```{r}
+samples_m1c <- coda.samples(m1c_jags,
+             c('mu', 'sigma'),
+             1000)
+```
+
+What's our estimate for the truncated data where values are removed?
+```{r}
+mean(trunc_data)
+sd(trunc_data)
+samples_m1b %>%
+  as.mcmc.list() %>%
+  spread_samples(mu, sigma) %>%
+  tidybayes::mean_qi()
+```
+
+And for those where they are retained but set to 600?
+```{r}
+mean(trunc_data2)
+sd(trunc_data2)
+samples_m1c %>%
+  as.mcmc.list() %>%
+  spread_samples(mu, sigma) %>%
+  tidybayes::mean_qi()
+```
+
+Conclusion: our bayesian approach is giving the same result as a simple mean (but much slower).  But can we estimate from truncated data the true mean?
+
+## Truncated mean bayesian estimation
+
+Define a model in JAGS (Just Another Gibbs Sampler) to calculate the mean from a truncated distribution
+```{r}
+
+m2_jags_txt <- 'model {
+for (i in 1:n) {
+d[i] ~ dnorm(mu, tau)T(,600)
+}
+mu ~ dunif(100,700)
+tau <- pow(sigma, -2)
+sigma ~ dunif(0, 150)
+}'
+
+```
+
+First using truncated data where points over 600 are removed completely:
+```{r}
+m2a_jags <- jags.model(textConnection(m2_jags_txt),
+                      data = list(d=dlist$dt, n=dlist$nt),
+                      n.chains = 4,
+                      n.adapt = 1000)
+
+update(m2a_jags, 5000)
+```
+
+Get samples for model 2a:
+```{r}
+samples_m2a <- coda.samples(m2a_jags,
+             c('mu', 'sigma'),
+             1000)
+```
+
+Now where points are set to 600
+```{r}
+m2b_jags <- jags.model(textConnection(m2_jags_txt),
+                      data = list(d=dlist$dt2, n=dlist$n),
+                      n.chains = 4,
+                      n.adapt = 1000)
+
+update(m2b_jags, 5000)
+```
+
+Get samples for model 2b:
+```{r}
+samples_m2b <- coda.samples(m2b_jags,
+             c('mu', 'sigma'),
+             1000)
+```
+
+What's our estimate for the truncated data where values are removed?
+```{r}
+mean(data)
+sd(data)
+samples_m2a %>%
+  as.mcmc.list() %>%
+  spread_samples(mu, sigma) %>%
+  tidybayes::mean_qi()
+```
+Bingo!
+
+And for those where they are retained but set to 600?
+```{r}
+mean(data)
+sd(data)
+samples_m2b %>%
+  as.mcmc.list() %>%
+  spread_samples(mu, sigma) %>%
+  tidybayes::mean_qi()
+```
+Oh dear.
+
+## Compare estimates from truncated and non-truncated distribution
+
+Although we have shown that we have a method where we can get an estimate of mean and sd from the truncated distribution that is accurate, how does the certainty of this estimate differ compared to where we have all of the data?
+
+```{r}
+plot_samples_m1 <- samples_m1 %>%
+  as.mcmc.list() %>%
+  gather_samples(mu, sigma) %>%
+  mutate(model='m1')
+
+plot_samples_m2a <- samples_m2a %>%
+  as.mcmc.list() %>%
+  gather_samples(mu, sigma) %>%
+  mutate(model='m2a')
+
+bind_rows(plot_samples_m1, plot_samples_m2a) %>%
+  ggplot(aes(x=model, y=estimate)) + 
+  geom_eye() + coord_flip() + facet_wrap(~term, scales = 'free') + theme_bw()
+
+```
+
+So the estimates are less precise in the truncated model.  But in this case we have removed any datapoints greater than 600 so we have lost this data.  How much information would be retained if these were included, even if the information was relatively limited (ie the true value is something above 600)
