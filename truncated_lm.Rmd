@@ -1,0 +1,337 @@
+---
+title: "Bayesian Linear Regression With Truncated Normal Distributions"
+author: Phil Chapman
+date: 2018-06-22
+output: 
+    html_document:
+        number_sections: yes
+        theme: cosmo
+        highlight: tango
+        toc: yes
+        toc_depth: 3
+        code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setup
+## Load libraries
+
+```{r, message=FALSE}
+library(rjags, quietly = TRUE)
+library(ggplot2, quietly = TRUE)
+library(dplyr, quietly = TRUE)
+library(tidybayes, quietly = TRUE)
+library(brms, quietly = TRUE)
+library(broom, quietly = TRUE)
+```
+
+## Simulate data
+
+Below we simulate a dataset with two groups with a difference in mean of 50.
+
+```{r}
+set.seed(1238)
+df <- data_frame(p1 = rbinom(1000, 1, 0.5),
+              d = 50,
+              data = rnorm(1000, mean = 500 + p1 * d , sd=80))
+df
+```
+
+Visualise this dataset:
+
+```{r}
+ggplot(df, aes(x=data, fill=as.factor(p1))) + 
+  geom_histogram(bins=50) +
+  facet_wrap(~as.factor(p1), ncol = 1) + theme_bw()
+```
+
+## Truncate the data
+
+Now truncate the data by getting rid of data above 600
+
+```{r}
+trunc_df <- df %>% 
+  filter(data < 600)
+trunc_df
+```
+
+And plot the truncated distributions:
+
+```{r}
+ggplot(trunc_df, aes(x=data, fill=as.factor(p1))) + 
+  geom_histogram(bins=50) +
+  facet_wrap(~as.factor(p1), ncol = 1) + theme_bw()
+```
+
+# Linear Regression
+
+Simply use linear regression to estimate the mean and difference between groups.  For the non-truncated data this works as expected:
+
+```{r}
+m1_lm <- lm(data ~ as.factor(p1), data=df)
+m1_lm
+tidy(m1_lm)
+```
+
+But the estimates are way out for the truncated data.
+
+```{r}
+m2_lm <- lm(data ~ as.factor(p1), data=trunc_df)
+m2_lm
+tidy(m2_lm)
+```
+
+# Linear Regression in JAGS
+
+## Normal bayesian linear regression on untruncated data
+
+### Define model
+
+The model is similar to that preivously used except that this time mu is not defined as a prior distribution, but as an equation with new parameters `a` and `b`.  We then specify fairly uninformative priors for a and b.
+
+```{r}
+m1_jags_txt <- 'model {
+for (i in 1:n) {
+d[i] ~ dnorm(mu[i], tau)
+mu[i] <- a + b * p1[i]
+}
+a ~ dunif(100,700)
+b ~ dnorm(0, 0.0001)
+tau <- pow(sigma, -2)
+sigma ~ dunif(0, 150)
+}'
+```
+
+### Fit model
+
+```{r m1_jags}
+
+m1_dlist <- list(d=df$data, p1=df$p1, n=nrow(df))
+
+m1_jags <- jags.model(textConnection(m1_jags_txt),
+                      data = m1_dlist,
+                      n.chains = 4,
+                      n.adapt = 1000)
+
+update(m1_jags, 5000)
+
+```
+
+### Extract samples
+
+```{r}
+samples_m1_jags <- coda.samples(m1_jags,
+                           c('sigma', 'a', 'b'),
+                           1000)
+plot(samples_m1_jags)
+```
+
+### Estimate parameters
+
+Reminder of the true values:
+
+```{r}
+lm(data ~ as.factor(p1), data=df)
+```
+
+How did our Bayesian model do?
+
+```{r}
+samples_m1_jags %>%
+  as.mcmc.list() %>%
+  gather_samples(a,b,sigma) %>%
+  tidybayes::mean_qi()
+```
+
+## Bayesian linear regression on truncated data
+
+### Define model
+
+The model definition is exactly the same as before except for the addition of the `T(,600)` notation to the third line:
+
+```{r}
+m2_jags_txt <- 'model {
+for (i in 1:n) {
+d[i] ~ dnorm(mu[i], tau)T(,600)
+mu[i] <- a + b * p1[i]
+}
+a ~ dunif(100,700)
+b ~ dnorm(0, 0.0001)
+tau <- pow(sigma, -2)
+sigma ~ dunif(0, 150)
+}'
+```
+
+
+### Fit model
+
+```{r m2_jags}
+
+m2_dlist <- list(d=trunc_df$data, p1=trunc_df$p1, n=nrow(trunc_df))
+
+m2_jags <- jags.model(textConnection(m2_jags_txt),
+                      data = m2_dlist,
+                      n.chains = 4,
+                      n.adapt = 1000)
+
+update(m2_jags, 5000)
+
+```
+
+### Extract samples
+
+```{r}
+samples_m2_jags <- coda.samples(m2_jags,
+                           c('sigma', 'a', 'b'),
+                           1000)
+plot(samples_m2_jags)
+```
+
+### Estimate parameters
+
+Reminder of the true values:
+
+```{r}
+lm(data ~ as.factor(p1), data=df)
+```
+
+How did our Bayesian model from truncated data do?
+
+```{r}
+samples_m2_jags %>%
+  as.mcmc.list() %>%
+  gather_samples(a,b,sigma) %>%
+  tidybayes::mean_qi()
+```
+
+
+## Compare parameter estimates from truncated and full
+
+How does the uncertainty around the estimates vary from the two models?
+
+```{r}
+plot_samples_m1_jags <- samples_m1_jags %>%
+  as.mcmc.list() %>%
+  gather_samples(a, b, sigma) %>%
+  mutate(model='m1_jags')
+
+plot_samples_m2_jags <- samples_m2_jags %>%
+  as.mcmc.list() %>%
+  gather_samples(a, b, sigma) %>%
+  mutate(model='m2_jags')
+
+bind_rows(plot_samples_m1_jags, plot_samples_m2_jags) %>%
+  ggplot(aes(x=model, y=estimate)) + 
+  geom_eye() + coord_flip() + facet_wrap(~term, scales = 'free') + theme_bw()
+```
+
+# Linear Regression in brms
+
+The brms package is a high level interface for the Stan statistical language, which is known for using Hamiltonian MCMC which is faster and more efficient than the Gibbs sampling approach using in JAGS.  This makes definition of the model much more concise.
+
+## Normal bayesian linear regression on untruncated data
+
+### Define model
+
+Model definition is very similar to R's normal linear regression modeling formula syntax.  The brms package then converts this into Stan code.
+
+```{r}
+m1_brms_form <- brmsformula(data ~ p1)
+```
+
+### Fit model
+
+The model is fit as below. Note that the formula could be specified directly in this function call and that using multiple cores is easy.  
+
+```{r m1_brms}
+m1_brms <- brm(m1_brms_form, data=df, chains = 4, iter = 2000, cores = 4, silent = TRUE)
+```
+
+### Explore model
+
+Get a summary of the model including information on how well the model converged.  Rhat of 1 and Eff.Sample close the the actual number of interations is a good thing!
+
+```{r}
+m1_brms
+```
+
+A more succinct summary is possible with `broom::tidy`
+
+```{r}
+lm(data ~ as.factor(p1), data=df)
+broom::tidy(m1_brms)
+```
+
+## Normal bayesian linear regression on truncated data
+
+### Define model
+
+The truncated distribution notation is very simple, see `?resp_trunc` for more information:
+
+```{r}
+m2_brms_form <- brmsformula(data | trunc(ub=600) ~ p1)
+```
+
+### Fit model
+
+Fit the model as before. NB WE SHOULD ADD HOW TO SPECIFY PRIORS HERE.
+
+```{r m2_brms}
+m2_brms <- brm(m2_brms_form, data=trunc_df, chains = 4, iter = 2000, cores = 4, silent = TRUE)
+```
+
+### Explore model
+
+Get a summary of the model, looks like it converged OK again and although the number of effective samples is smaller, Rhat is still 1.
+
+```{r}
+m2_brms
+```
+
+A more succinct summary is possible with `broom::tidy` - once again we get good estimates.
+
+```{r}
+lm(data ~ as.factor(p1), data=df)
+broom::tidy(m2_brms)
+```
+
+Node that we can view the Stan code that brms has produced:
+
+```{r}
+stancode(m1_brms)
+```
+
+## Compare parameter estimates from truncated and full
+
+How does the uncertainty around the estimates vary from the two models?
+
+```{r}
+plot_samples_m1_brms <- m1_brms %>%
+  gather_samples(b_Intercept, b_p1, sigma) %>%
+  mutate(model='m1_brms')
+
+plot_samples_m2_brms <- m2_brms %>%
+  gather_samples(b_Intercept, b_p1, sigma) %>%
+  mutate(model='m2_brms')
+
+bind_rows(plot_samples_m1_brms, plot_samples_m2_brms) %>%
+  ggplot(aes(x=model, y=estimate)) + 
+  geom_eye() + coord_flip() + facet_wrap(~term, scales = 'free') + theme_bw()
+```
+
+Not bad but could be improved if we specified some priors rather than using default ones.
+
+# Conclusion
+
+Following on from the previous analysis just estimating the mean of a single group, a linear regression framework can be built relatively easily.  Using the `brms` package allows the model to be defined more easily, but some of the flexibility of the full language of JAGS or Stan is lost.
+
+# Session Info
+```{r}
+Sys.time()
+sessionInfo()
+cat(paste(readLines('/etc/docker/docker_info.txt'), '\n'))
+```
+
