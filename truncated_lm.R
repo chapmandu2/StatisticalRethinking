@@ -69,3 +69,25 @@ samples_m3 %>%
   as.mcmc.list() %>%
   gather_samples(a,b,sigma) %>%
   tidybayes::mean_qi()
+
+#try to use brms instead
+library(brms)
+
+#normal linear regression on untruncated data
+m1_brms <- brm(data ~ p1, data=df)
+m1_brms
+broom::tidy(m1_brms)
+
+#from truncated data - see ?resp_trunc for details
+m2_brms <- brm(data | trunc(ub=600) ~ p1, data=trunc_df)
+m2_brms
+broom::tidy(m2_brms)
+shinystan::launch_shinystan(m2_brms)
+
+m2_brms %>%
+  gather_samples(b_Intercept, b_p1, sigma) %>%
+  ggplot(aes(x=term, y=estimate)) + 
+  geom_eye() + coord_flip() +  theme_bw() + 
+  facet_wrap(~term, scales = 'free', ncol=1) 
+
+#that was depressingly easy.
