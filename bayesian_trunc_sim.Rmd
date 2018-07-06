@@ -276,9 +276,136 @@ Censored and normal are almost identical, truncated is slightly inaccurate.
 
 # Simulation experiment
 
+In this section, we seek to simulate data from a range of parameters and then see how each model performs in different situations.  To do this we need combinations of parameters, and then a number of datasets per parameter combination.  We then compare the accuracy of each model against the baseline, which will be the normal linear regression with `lm`.
+
+To carry out simulations, it is useful to use the tidyverse suite of tools especially the `purrr` package and its `map` function.  See this blog post for more information on this approach: https://chapmandu2.github.io/post/2017/02/21/bioinformatics-in-the-tidyverse/ 
+
 ## Simulate the data
 
+### Define parameter grid
+
+First of all we use the `tidyr::crossing` function to simulate a data frame which is a grid of values which can then be fed into the `make_data` function that we prepared:
+
+```{r}
+params_df <- tidyr::crossing(d=50, ub=600, g1=c(400, 500, 600), sd=80, n=1000) %>%
+    mutate(param_id = row_number()) %>%
+    tidyr::crossing(sim_id=1:10)
+params_df
+```
+
+For each of the `r nrow(params_df)` rows in the data frame we need to create a dataset for each.
+
+### Simulate data for each set of parameters
+
+To simulate the data we _apply_ the `make_data` function to each row in the `params_df` data frame using the `pmap` function from `purrr`:
+
+```{r}
+sim_data <- params_df %>%
+    mutate(data = pmap(.l=list(d=d, ub=ub, g1=g1, sd=sd, n=n), .f=make_data))
+```
+
+The `pmap` function takes multiple inputs, since our `make_data` function has multiple input parameters.  For simpler functions with just a single parameter, or where only one parameter is provided by data in the data frame we can just use map.
+
+We now have a data frame where the data column is actually a list-col containing data frames:
+
+```{r}
+sim_data
+```
+
+We can access one of these data frames using list notation:
+
+```{r}
+sim_data$data[[1]]
+```
+
+
 ## Fit the models
+
+Now we can fit the models to the simulated data in each row of the data frame, again using functions in `purrr`.
+
+### Fit the simple linear model to simulated data
+
+To start with, let's just fit the linear model.  This is achieved as follows:
+
+```{r}
+test_lm_df <- sim_data %>%
+    mutate(lm_mod=map(data, ~lm(data ~ p1, data=.)))
+test_lm_df
+```
+
+Now we have an lm object for each set of simulated data.  We can again access this as if it were a list:
+
+```{r}
+broom::tidy(test_lm_df$lm_mod[[1]])
+```
+
+There's quite a lot going on in a relatively compact expression, but what we're doing is mapping the data column (ie the data frame per row) into a call to the `lm` function.  The tilde (`~`) is shorthand and let's us refer to the object we're passing in as a period (`.`)  An alternative would be:
+
+```{r eval=FALSE}
+test_lm_df <- sim_data %>%
+    mutate(lm_mod=map(.x=data, .f=function(x) {
+        lm(data ~ p1, data=x)
+        }))
+```
+
+But ultimately what we've done is repeat the linear model fit across all of our different simulated datasets.
+
+### Fit the normal brms model to simulated data
+
+Fitting the brms model follows the same pattern, with two key differences:
+
+- Instead of making a new brms model each time, we can update the one we already created. This is much quicker since it avoids that slow compiling step.
+- Instead of using map we use `future_map` from the amazing `furrr` package.  This package combines easy parallelisation from the `future` package with the nice `map` functions we used before.
+
+First we plan for parallelisation:
+
+```{r}
+plan(multicore)
+```
+
+Now fit the simple bayesian linear model to each simulated dataset.  Using `future_map` allows R to use all available cores for the work rather than 1.  We use `update` rather than `brm` and map the simulated data from each row into the `newdata` parameter.  Setting `recompile` to FALSE ensures that the lengthy recompiling step is avoided, and we only use 1 core per model fit since future is already taking care of parallisation for us.
+
+```{r test-brm-multi}
+test_brm_df <- sim_data %>%
+    mutate(b_mod = future_map(data, ~update(brms_mod, newdata=., recompile=FALSE, 
+                                            chains=4, iter=1000, init_r=5, cores=1)))
+```
+
+And we now we have a brmsfit object for each dataset!   
+
+```{r}
+test_brm_df
+```
+
+One thing to note is that storing all of these objects makes for a big data frame so we have to be careful:
+
+```{r}
+pryr::object_size(test_brm_df)
+```
+
+### Fit all models at once to simulated data
+
+Having laid the groundwork we can now fit all of the models in a single dataframe as follows:
+
+```{r sim-all-models}
+sim_models <- sim_data %>%
+    mutate(lm_mod=map(data, ~lm(data ~ p1, data=.)),
+           brms_mod=future_map(data, ~update(brms_mod, newdata=., recompile=FALSE, 
+                                            chains=4, iter=1000, init_r=5, cores=1)),
+           brms_mod_trunc=future_map(data, ~update(brms_mod_trunc, newdata=., recompile=FALSE, 
+                                            chains=4, iter=1000, init_r=5, cores=1)),
+           brms_mod_cens=future_map(data, ~update(brms_mod_cens, newdata=., recompile=FALSE, 
+                                            chains=4, iter=1000, init_r=5, cores=1)))
+```
+
+We do need to beware a little when doing this since we aren't properly checking the brms models for basic things like convergence etc.  But since we know the 'truth' anyway this isn't so bad, models gone wrong will show up anyhow.
+
+This dataframe is going to be even bigger:
+
+```{r}
+pryr::object_size(sim_models)
+```
+
 
 ## Extract the parameters
 
