@@ -1,0 +1,295 @@
+---
+title: "Bayesian Linear Regression Simulations With Truncated & Censored Normal Distributions"
+author: Phil Chapman
+date: 2018-07-06
+output: 
+    html_document:
+        number_sections: yes
+        theme: cosmo
+        highlight: tango
+        toc: yes
+        toc_depth: 3
+        code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+# Setup
+## Load libraries
+
+```{r, message=FALSE}
+library(ggplot2, quietly = TRUE)
+library(dplyr, quietly = TRUE)
+library(tidybayes, quietly = TRUE)
+library(brms, quietly = TRUE)
+library(broom, quietly = TRUE)
+library(future, quietly = TRUE)
+library(purrr, quietly = TRUE)
+library(furrr, quietly = TRUE)
+
+```
+
+## Simulate a dataset
+
+In this section we simulate a dataset containing two groups of normally distributed data with the same variance but with a mean differing by 50.
+
+### Define a function to make the data
+
+Since we are going to do this repeatedly later on in the simulation section, it makes sense to define a function:
+
+```{r}
+make_data <- function(d=50, ub=600, g1=500, sd=80, n=1000) {
+    data_frame(p1 = rbinom(n, 1, 0.5),
+               d = d,
+               data = rnorm(n, mean = g1 + p1 * d , sd=sd),
+               censored = ifelse(data >= ub, 1, 0),
+               cens_data = ifelse(censored == 1, ub, data),
+               trunc_data = ifelse(censored == 1, NA, data))
+}
+```
+
+The parameters of the function above are as follows:
+
+- `d` is the difference between the mean of the two groups
+- `ub` is the upper bound of what can be measured, ie the censoring/truncation value
+- `g1` is the mean of the group with the lowest mean
+- `sd` is the standard deviation of both groups
+- `n` is the number of data points to be simulated.
+
+### Make the data
+
+Now use the function above to make some data:
+
+```{r}
+set.seed(1234)
+test_data <- make_data(d=50, ub=600, g1=500, sd=80, n=1000)
+test_data
+```
+
+### Plot the data
+
+To visualise the original, truncated and censored data, we first need to change the data format slightly:
+
+```{r}
+p1_data <- test_data %>%
+    select(p1, data, cens_data, trunc_data) %>%
+    tidyr::gather('dataset', 'value', -p1) %>%
+    filter(!is.na(value) )
+```
+
+Now plot:
+```{r}
+p1 <- ggplot(p1_data, aes(x=value, fill=as.factor(p1))) + 
+  geom_histogram(bins=50) +
+  facet_grid(as.factor(p1)~dataset, scales = 'free_y') + 
+  theme_bw()
+p1
+```
+
+### Calculate means and standard deviations
+
+Use the `mean` and `sd` functions to calculate mean and standard deviation for each dataset by group:
+
+```{r}
+p1_data %>%
+    group_by(dataset, p1) %>%
+    summarise(mean(value), sd(value))
+```
+
+The original data gives a mean of ~500 and sd's for the two groups around ~80, whilst the truncated and censored data give means that don't agree with the original data. 
+
+# Introduce the models
+
+We now use linear regression to estimate the means of the original data.  Simply using lm on the original data is equivalent to calculating a mean as per the previous section.  However, in a Bayesian framework we can do linear regression with censored or truncated data too. Here we define those models and get an initial idea of how effectively they work.
+
+## Simple linear regression with lm
+
+Simple linear regression can be carried out using the `lm` function as follows:
+
+```{r}
+lm_mod <- lm(data ~ p1, data=test_data)
+```
+Look at a summary of this model:
+
+```{r}
+summary(lm_mod)
+```
+
+Now just extract the coefficients:
+
+```{r}
+broom::tidy(lm_mod)
+```
+
+So the intercept represents the mean of the lower group (where p1 is 0) and the p1 coefficient represents the difference between groups (or `d` as originally defined).
+
+## Simple Bayesian linear regression with brms
+
+We can use the `brms` package to estimate parameters too in a relatively simple way.  The differences are that we have to provide some priors, and also control how the MCMC sampler behaves:
+
+```{r brms-lm-test}
+brms_mod <- brm(formula = data  ~ p1, data=test_data, 
+               prior = c(set_prior("normal(500, 1000)", class='Intercept'),
+                         set_prior("normal(0,200)", class = "b"),
+                         set_prior("cauchy(0, 40)", class = "sigma")),
+               chains = 4, iter = 2000, cores=4, silent = TRUE, refresh = 0 ) 
+```
+
+This model took about 60 seconds to fit.  However, most of that was compiling the model and we can avoid that in future by updating the model with new data which will speed things up a bit.
+
+Examining the model specification, the formula is identical to that used with the `lm` package, but what are these priors?  Effectively this contains information on what we know about the parameters we are trying to estimate before we start.  Very little information is being provided with these priors, it is effectively just starting the process off.  
+
+To get a sense of how little information is contained in the priors, let's plot them against the data.  The dashed lines are the priors for the intercept (green) and difference (purple), the solid lines are the data,:
+
+```{r}
+ggplot(test_data) + 
+    geom_density(aes(x=data, color=as.factor(p1))) +
+    geom_density(data=data.frame(x=rnorm(10000, 500, 1000)), mapping=aes(x=x), color='darkgreen', linetype='dashed') +
+    geom_density(data=data.frame(x=rnorm(10000, 0, 200)), mapping=aes(x=x), color='purple', linetype='dashed') +
+    theme_bw()
+    
+```
+
+Now let's look at the model output:
+
+```{r}
+brms_mod
+```
+
+And finally grab the coefficient estimates:
+
+```{r}
+broom::tidy(brms_mod)
+```
+
+The numbers are almost exactly the same as those from `lm`:
+
+```{r}
+broom::tidy(lm_mod)
+```
+
+## Bayesian linear regression on truncated data with brms
+
+The benefit of using a Bayesian approach is that distributions which don't have an analytical solution can be included in the model.  In this case we define a model where the data is truncated with an upper bound of 600:
+
+```{r brms-trunc}
+brms_mod_trunc <- brm(formula = trunc_data | trunc(ub=600)  ~ p1, data=test_data, 
+               prior = c(set_prior("normal(500, 1000)", class='Intercept'),
+                         set_prior("normal(0,200)", class = "b"),
+                         set_prior("cauchy(0, 40)", class = "sigma")),
+               chains = 4, iter = 2000, cores=4, init_r=5, silent = TRUE, refresh = 0 ) 
+```
+
+The differences are:
+
+- we use the truncated data from the test_data data frame as the response variable
+- we specify the response distribution is truncated using the `| trunc(ub=600)` notation
+- we add the `init_r=5` parameter which helps the sampler get started
+
+Now let's look at the model output:
+
+```{r}
+brms_mod_trunc
+```
+
+And finally grab the coefficient estimates:
+
+```{r}
+broom::tidy(brms_mod_trunc)
+```
+
+Compare these to the simple Bayesian linear model (which was almost identical to the output of `lm`):
+
+```{r}
+broom::tidy(brms_mod)
+```
+
+## Bayesian linear regression with censored data with brms
+
+The difference between truncated and censored data is that with censored data the data points are still present in the dataset rather than having been filtered out.  We can model this too:
+
+```{r brms-cens}
+brms_mod_cens <- brm(formula = cens_data | cens(censored)  ~ p1, data=test_data, 
+               prior = c(set_prior("normal(500, 1000)", class='Intercept'),
+                         set_prior("normal(0,200)", class = "b"),
+                         set_prior("cauchy(0, 40)", class = "sigma")),
+               chains = 4, iter = 2000, cores=4, init_r=5, silent = TRUE, refresh = 0 ) 
+```
+
+The differences are:
+
+- we use the censored data from the test_data data frame as the response variable
+- we specify that the response distribution is censored and the marker variable using the `| cens(censored)` notation
+- we add the `init_r=5` parameter which helps the sampler get started
+
+
+Now let's look at the model output:
+
+```{r}
+brms_mod_cens
+```
+
+And finally grab the coefficient estimates:
+
+```{r}
+broom::tidy(brms_mod_cens)
+```
+
+Compare these to the simple Bayesian linear model (which was almost identical to the output of `lm`):
+
+```{r}
+broom::tidy(brms_mod)
+```
+
+## Compare all models
+
+To compare the output of the Bayesian models, we can plot the posterior distributions.  First, extract the posterior samples from each model:
+
+```{r}
+plot_samples <- list()
+plot_samples[[1]] <- brms_mod %>%
+    gather_samples(b_Intercept, b_p1, sigma) %>%
+    mutate(model='normal')
+
+plot_samples[[2]] <- brms_mod_trunc %>%
+    gather_samples(b_Intercept, b_p1, sigma) %>%
+    mutate(model='truncated')
+
+plot_samples[[3]] <- brms_mod_cens %>%
+    gather_samples(b_Intercept, b_p1, sigma) %>%
+    mutate(model='censored')
+```
+
+Now bind rows together and plot:
+
+```{r}
+bind_rows(plot_samples) %>%
+    ggplot(aes(x=model, y=estimate)) + 
+    geom_eye() + coord_flip() + facet_wrap(~term, scales = 'free') + theme_bw()
+```
+
+Censored and normal are almost identical, truncated is slightly inaccurate. 
+
+# Simulation experiment
+
+## Simulate the data
+
+## Fit the models
+
+## Extract the parameters
+
+## Plot the results
+
+
+# Conclusion
+
+# Session Info
+```{r}
+Sys.time()
+sessionInfo()
+cat(paste(readLines('/etc/docker/docker_info.txt'), '\n'))
+```
