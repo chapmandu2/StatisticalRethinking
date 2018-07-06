@@ -2,7 +2,14 @@
 title: "Truncated Normal Distributions"
 author: Phil Chapman
 date: 2018-06-21
-output: html_document
+output: 
+    html_document:
+        number_sections: yes
+        theme: cosmo
+        highlight: tango
+        toc: yes
+        toc_depth: 3
+        code_folding: show
 ---
 
 ```{r setup, include=FALSE}
@@ -277,3 +284,10 @@ bind_rows(plot_samples_m1, plot_samples_m2a) %>%
 ```
 
 So the estimates are less precise in the truncated model.  But in this case we have removed any datapoints greater than 600 so we have lost this data.  How much information would be retained if these were included, even if the information was relatively limited (ie the true value is something above 600)
+
+# Session Info
+```{r}
+Sys.time()
+sessionInfo()
+cat(paste(readLines('/etc/docker/docker_info.txt'), '\n'))
+```
