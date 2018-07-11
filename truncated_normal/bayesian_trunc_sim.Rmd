@@ -470,6 +470,13 @@ result_df %>%
 
 # Conclusion
 
+# Export data
+
+```{r}
+save(result_df, sim_data, params_df, file = '~/StatisticalRethinking/truncated_normal/bayesian_trunc_sim_output/sim_output.RData')
+```
+
+
 # Session Info
 ```{r}
 Sys.time()
