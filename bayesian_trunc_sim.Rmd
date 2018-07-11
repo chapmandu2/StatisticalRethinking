@@ -287,8 +287,9 @@ To carry out simulations, it is useful to use the tidyverse suite of tools espec
 First of all we use the `tidyr::crossing` function to simulate a data frame which is a grid of values which can then be fed into the `make_data` function that we prepared:
 
 ```{r}
-params_df <- tidyr::crossing(d=50, ub=600, g1=c(400, 500, 600), sd=80, n=1000) %>%
-    mutate(param_id = row_number()) %>%
+#params_df <- tidyr::crossing(d=c(25, 50, 100), ub=600, g1=c(400, 450, 500, 550), sd=80, n=1000) %>%
+params_df <- tidyr::crossing(d=50, ub=600, g1=c(400, 500), sd=80, n=1000) %>%
+        mutate(param_id = row_number()) %>%
     tidyr::crossing(sim_id=1:10)
 params_df
 ```
@@ -416,6 +417,9 @@ TO DO: break this down to make it more understandable
 ```{r}
 result_df <- sim_models %>%
     select(param_id, sim_id, lm_mod, brms_mod, brms_mod_trunc, brms_mod_cens) %>%
+    filter(map_dbl(brms_mod, brms::nsamples) > 0, 
+           map_dbl(brms_mod_cens, brms::nsamples) > 0,
+           map_dbl(brms_mod_trunc, brms::nsamples) > 0) %>%
     mutate(lm_intercept = map_dbl(lm_mod, ~coef(.)[[1]]),
            lm_p1 = map_dbl(lm_mod, ~coef(.)[[2]])) %>%
     tidyr:: gather('model', 'object', starts_with('brms')) %>%
@@ -438,9 +442,9 @@ Now plot the results.  We are interested in the difference between the actual an
 ```{r}
 result_df %>%
     dplyr::filter(g1 < 600) %>%
-    ggplot(aes(color=model, y=diff_intercept, x=g1, group=g1)) + 
+    ggplot(aes(color=as.factor(g1), y=b_Intercept, x=g1)) + 
     geom_boxplot() + 
-    facet_wrap(~model) +
+    facet_grid(as.factor(d)~model) +
     theme_bw()
 
 ```
@@ -450,9 +454,9 @@ result_df %>%
 ```{r}
 result_df %>%
     dplyr::filter(g1 < 600) %>%
-    ggplot(aes(color=model, y=diff_p1, x=g1, group=g1)) + 
+    ggplot(aes(color=as.factor(g1), y=b_p1, x=g1)) + 
     geom_boxplot() + 
-    facet_wrap(~model) +
+    facet_grid(as.factor(d)~model) +
     theme_bw()
 
 ```
