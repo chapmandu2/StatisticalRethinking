@@ -39,9 +39,12 @@ ui <- fluidPage(
       
       # Show a plot of the generated distribution
       mainPanel(
-         plotOutput("plot"),
-         tableOutput('table')
+         plotOutput("plot")
       )
+   ),
+   
+   fluidRow(
+       DT::dataTableOutput('table')
    )
 )
 
@@ -52,15 +55,12 @@ server <- function(input, output) {
        make_plot(result_df, input$selected_yval)
    })
    
-   output$table <- renderTable({
-       result_df %>% group_by(param_id, d,ub,g1,sd,n) %>% 
-           summarise_at(vars(b_Intercept, b_p1, diff_intercept, diff_p1), c('mean', 'sd')) %>% 
-           t() %>%
-           as.data.frame() %>%
-           tibble::rownames_to_column('colname') %>%
-           as_tibble()
+   output$table <- DT::renderDataTable({
+       result_df %>% group_by(model, param_id, d,ub,g1,sd,n) %>% 
+           summarise_at(vars(b_Intercept, b_p1, diff_intercept, diff_p1), 
+                        funs(mean=round(mean(.),3), sd=round(sd(.),3))) 
 
-   })
+   }, filter='top', options=list(pageLength = 40))
 }
 
 # Run the application 
