@@ -39,7 +39,8 @@ ui <- fluidPage(
       
       # Show a plot of the generated distribution
       mainPanel(
-         plotOutput("plot")
+         plotOutput("plot"),
+         tableOutput('table')
       )
    )
 )
@@ -49,6 +50,16 @@ server <- function(input, output) {
    
    output$plot <- renderPlot({
        make_plot(result_df, input$selected_yval)
+   })
+   
+   output$table <- renderTable({
+       result_df %>% group_by(param_id, d,ub,g1,sd,n) %>% 
+           summarise_at(vars(b_Intercept, b_p1, diff_intercept, diff_p1), c('mean', 'sd')) %>% 
+           t() %>%
+           as.data.frame() %>%
+           tibble::rownames_to_column('colname') %>%
+           as_tibble()
+
    })
 }
 
