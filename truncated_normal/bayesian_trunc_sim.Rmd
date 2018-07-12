@@ -470,10 +470,11 @@ result_df %>%
 
 # Conclusion
 
-# Export data
+# Export data and models
 
 ```{r}
 save(result_df, sim_data, params_df, file = '~/StatisticalRethinking/truncated_normal/bayesian_trunc_sim_output/sim_output.RData')
+save(brms_mod, brms_mod_trunc, brms_mod_cens, file = '~/StatisticalRethinking/truncated_normal/bayesian_trunc_sim_output/brms_models.RData')
 ```
 
 

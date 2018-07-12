@@ -5,3 +5,4 @@
 *.pdf
 .Rapp.history
 .DS_Store
+brms_models.RData
