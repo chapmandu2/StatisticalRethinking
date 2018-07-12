@@ -42,6 +42,9 @@ ui <- fluidPage(
     # Application title
     titlePanel("Bayesian Simulation Exploration"),
     
+    # Help text
+    helpText('Set parameters to simulate data from two groups, then censor it above 600. Then use a Bayesian model to estimate them from the simulated data.'),
+    
     # Sidebar with a slider input for number of bins 
     sidebarLayout(
         sidebarPanel(
@@ -53,7 +56,10 @@ ui <- fluidPage(
                         min=10, max=100, value=50),
             sliderInput("selected_sd",
                         "Standard deviation:",
-                        min=50, max=130, value=80)
+                        min=50, max=130, value=80),
+            submitButton('Update'),
+            helpText('Select desired parameters and hit update to plot.  This may take up to 10 seconds.')
+            
             
         ),
         
