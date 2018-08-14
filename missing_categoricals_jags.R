@@ -168,3 +168,41 @@ lm(Divorce ~ South, data = d)
 
 
 
+# now use brms ------------------------------------------------------------
+
+# how to fit a normal linear model in brms
+library(brms)
+
+#specify and run model
+brms_mod <- brm(formula = Divorce  ~ South, data=d, 
+                prior = c(set_prior("normal(0, 100)", class='Intercept'),
+                          set_prior("normal(0, 100)", class = "b"),
+                          set_prior("cauchy(0, 40)", class = "sigma")),
+                chains = 4, iter = 2000, cores=4, silent = TRUE, refresh = 0 ) 
+
+#view model output
+brms_mod
+broom::tidy(brms_mod)
+
+#view original
+lm(Divorce ~ South, data = d)
+
+#get samples
+plot_samples_brms <- brms_mod %>%
+    gather_samples(b_Intercept, b_South, sigma) %>%
+    ungroup() %>%
+    mutate(term = case_when(term == 'b_Intercept' ~ 'a',
+                            term == 'b_South' ~ 'b',
+                            TRUE ~ 'sigma')) %>%
+    mutate(model = 'm3_brms')
+plot_samples_brms
+
+#plot posteriors from all models
+bind_rows(plot_samples_m1, plot_samples_m2, plot_samples_brms) %>%
+    ggplot(aes(x=model, y=estimate)) + 
+    geom_eye() + coord_flip() + facet_wrap(~term, scales = 'free') + theme_bw()
+
+#also check out MCMC diagnostics
+launch_shinystan(brms_mod)
+
+
