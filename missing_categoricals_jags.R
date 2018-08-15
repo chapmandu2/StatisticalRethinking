@@ -42,6 +42,10 @@ d$prob_south <-
 head(d[, c('Location', 'Divorce', 'South', 'prob_south')])
 
 #visualise
+ggplot(d, aes(x = MedianAgeMarriage, y = Divorce)) + 
+    geom_point(shape = 21) + geom_smooth(method='lm') + theme_bw()
+ggplot(d, aes(x = as.factor(South), y = MedianAgeMarriage)) + geom_boxplot() +
+    geom_point(position = position_jitter(width = 0.1), shape = 21) + theme_bw()
 ggplot(d, aes(x = as.factor(South), y = Divorce)) + geom_boxplot() +
     geom_point(position = position_jitter(width = 0.1), shape = 21) + theme_bw()
 ggplot(d, aes(x = South, y = Divorce)) +
