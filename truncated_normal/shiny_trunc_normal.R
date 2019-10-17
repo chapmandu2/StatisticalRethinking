@@ -11,7 +11,7 @@ library(shiny)
 library(dplyr)
 library(ggplot2)
 
-load('~/StatisticalRethinking/truncated_normal/bayesian_trunc_sim_output/sim_output.RData')
+load('/home/rstudio/hostdata/StatisticalRethinking/truncated_normal/bayesian_trunc_sim_output/sim_output.RData')
 
 make_plot <- function(data, y_val='b_Intercept') {
     data %>%
